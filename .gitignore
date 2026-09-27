@@ -1,0 +1,15 @@
+# Downloaded upstream binaries and local build artefacts are never committed.
+/tools/*
+!/tools/.gitkeep
+/release/*
+!/release/.gitkeep
+/.gocache/
+/.officecli-patch-cache/
+/pypi/dist/
+/pypi/build/
+/pypi/src/*.egg-info/
+__pycache__/
+*.py[cod]
+doc
+output
+

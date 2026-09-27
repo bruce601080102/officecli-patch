@@ -1,0 +1,60 @@
+name: Build and release officecli-patch
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix (for example 0.2.0)
+        required: true
+        type: string
+      officecli_version:
+        description: Official OfficeCLI release tag, or latest
+        required: true
+        default: latest
+        type: string
+      publish_pypi:
+        description: Also publish the PyPI launcher (requires PYPI_API_TOKEN secret)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download official OfficeCLI and build all targets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/fetch_officecli.py --version '${{ inputs.officecli_version }}' --tools-dir tools
+          pwsh ./build.ps1 -SkipFetch
+          cd release
+          sha256sum officecli-patch-* > checksums.txt
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: officecli-patch v${{ inputs.version }}
+          generate_release_notes: true
+          files: release/*
+      - name: Build PyPI launcher
+        if: inputs.publish_pypi
+        run: |
+          python -m pip install --upgrade build
+          python scripts/build_pypi.py --repository '${{ github.repository }}' --version '${{ inputs.version }}'
+      - name: Publish PyPI launcher
+        if: inputs.publish_pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: release/pypi/
