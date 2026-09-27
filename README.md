@@ -32,7 +32,7 @@ officecli-patch dump original.docx -o original.json
 officecli-patch diff original.json ai.json -o patch.json
 
 # 建立保留原格式的輸出文件
-officecli-patch rewrite original.docx original.json ai.json -o output.docx --best-effort
+officecli-patch rewrite original.docx original.json ai.json -o output.docx
 ```
 
 原生指令照常可用：
@@ -49,7 +49,7 @@ officecli-patch help docx
 | `diff <original.json> <ai.json> [-o <patch.json>]` | 僅產生既有文字 run 的 `props.text` 差異。 |
 | `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | 複製原文件、產生文字 patch、套用變更並還原未修改部分。 |
 
-`rewrite` 預設輸出 `<原檔名>.rewritten.docx`。`--best-effort` 會略過無法套用的個別 run；`--force` 可覆寫既有輸出檔。
+`rewrite` 預設輸出 `<原檔名>.rewritten.docx`，並固定以 `--best-effort` 套用 patch：無法套用的個別 run 不會取消其他成功的文字更新。`--force` 可覆寫既有輸出檔。
 
 ### PyPI 與 GitHub Release
 
@@ -77,7 +77,7 @@ officecli-patch dump original.docx -o original.json
 
 # Let an AI edit only props.text and save the result as ai.json.
 officecli-patch diff original.json ai.json -o patch.json
-officecli-patch rewrite original.docx original.json ai.json -o output.docx --best-effort
+officecli-patch rewrite original.docx original.json ai.json -o output.docx
 ```
 
 All other commands are passed through to the embedded official OfficeCLI:

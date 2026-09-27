@@ -92,7 +92,6 @@ func rewrite(args []string) error {
 	output := fs.String("output", "", "write rewritten DOCX here")
 	fs.StringVar(output, "o", "", "write rewritten DOCX here")
 	force := fs.Bool("force", false, "allow overwriting --output")
-	bestEffort := fs.Bool("best-effort", false, "continue if an OfficeCLI text path fails")
 	if err := parseInterspersed(fs, args, map[string]bool{"--output": true, "-o": true}); err != nil {
 		return err
 	}
@@ -134,20 +133,22 @@ func rewrite(args []string) error {
 	if err := patchFile.Close(); err != nil {
 		return fmt.Errorf("finish temporary patch: %w", err)
 	}
-	batchArgs := []string{"batch", *output, "--input", patchPath}
-	if *bestEffort {
-		batchArgs = append(batchArgs, "--best-effort")
-	}
+	// A generated patch may include paths that the official dump represents but
+	// OfficeCLI cannot later resolve (for example, an empty or normalized run).
+	// The original manual workflow always used --best-effort; rewrite must do the
+	// same or one failed path makes OfficeCLI's atomic batch discard every update.
+	batchArgs := []string{"batch", *output, "--input", patchPath, "--best-effort"}
 	batchLog, batchErr := runBatch(batchArgs)
-	closeErr := runOfficeCLI([]string{"close", *output})
-	if err := mergeUnmodifiedParts(source, *output, mutablePartsFromPaths(successfulPaths(batchLog))); err != nil {
+	successful := successfulPaths(batchLog)
+	if len(successful) == 0 && batchErr != nil {
+		return batchErr
+	}
+	if err := mergeUnmodifiedParts(source, *output, mutablePartsFromPaths(successful)); err != nil {
 		return err
 	}
 	if batchErr != nil {
-		return batchErr
-	}
-	if closeErr != nil {
-		return closeErr
+		fmt.Fprintf(os.Stderr, "officecli-patch: rewrote %d of %d text change(s); %d could not be applied\n", len(successful), len(changes), len(changes)-len(successful))
+		return nil
 	}
 	fmt.Fprintf(os.Stderr, "officecli-patch: rewrote %d text change(s) to %s\n", len(changes), *output)
 	return nil
@@ -410,11 +411,11 @@ func printUsage(w io.Writer) {
 
 Usage:
   officecli-patch diff <original.json> <ai.json> [-o <patch.json>]
-  officecli-patch rewrite <source.docx> <original.json> <ai.json> [-o <edited.docx>] [--force] [--best-effort]
+  officecli-patch rewrite <source.docx> <original.json> <ai.json> [-o <edited.docx>] [--force]
 
 rewrite combines copy, diff, and OfficeCLI batch into one operation. It applies only actual
-props.text differences, never replays the full AI JSON, and restores every untouched DOCX ZIP
-part from the source document.
+props.text differences, always uses OfficeCLI --best-effort so invalid paths do not discard all
+updates, and restores every untouched DOCX ZIP part from the source document.
 
 All other commands and arguments are passed through to the embedded native OfficeCLI unchanged.
 For example: officecli-patch dump file.docx -o original.json
