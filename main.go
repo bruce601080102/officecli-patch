@@ -2,7 +2,6 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
 	"errors"
 	"flag"
@@ -11,8 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"officecli-patch/internal/patch"
@@ -84,9 +81,9 @@ func diff(args []string) error {
 	return nil
 }
 
-// rewrite combines the safe portion of the former multi-command workflow:
-// copy source -> make a props.text-only patch -> batch the patch -> restore all
-// untouched DOCX package parts. It deliberately never replays the full AI dump.
+// rewrite is intentionally equivalent to the proven manual workflow:
+// copy source -> batch the full AI JSON -> make a text patch -> batch the patch
+// with --best-effort. It does not inspect or rewrite DOCX ZIP parts itself.
 func rewrite(args []string) error {
 	fs := newFlagSet("rewrite")
 	output := fs.String("output", "", "write rewritten DOCX here")
@@ -105,20 +102,32 @@ func rewrite(args []string) error {
 	if samePath(source, *output) {
 		return usageError("--output is the input file; choose another output name")
 	}
+	if err := copyDocument(source, *output, *force); err != nil {
+		return err
+	}
+	// This is the first OfficeCLI batch from the manual workflow. It deliberately
+	// receives the complete AI JSON rather than the generated narrow text patch.
+	if err := runOfficeCLI([]string{"batch", *output, "--input", fs.Arg(2)}); err != nil {
+		var exitErr *exitError
+		if !errors.As(err, &exitErr) {
+			return fmt.Errorf("apply AI JSON to copied document: %w", err)
+		}
+		// Match the shell workflow: an OfficeCLI batch may report unresolved items
+		// (and even atomic rollback) but the following best-effort text patch must
+		// still run against the copied source document.
+		fmt.Fprintln(os.Stderr, "officecli-patch: AI JSON batch reported unresolved items; continuing with the text patch")
+	}
 	commands, changes, err := makePatch(fs.Arg(1), fs.Arg(2))
 	if err != nil {
 		return err
 	}
 	if len(commands) == 0 {
-		fmt.Fprintln(os.Stderr, "officecli-patch: no text changes; output document was not created")
+		fmt.Fprintf(os.Stderr, "officecli-patch: AI JSON applied; no props.text patch was needed: %s\n", *output)
 		return nil
 	}
 	data, err := patch.Marshal(commands)
 	if err != nil {
 		return fmt.Errorf("serialize patch: %w", err)
-	}
-	if err := copyDocument(source, *output, *force); err != nil {
-		return err
 	}
 	patchFile, err := os.CreateTemp(filepath.Dir(*output), ".officecli-patch-*.json")
 	if err != nil {
@@ -133,144 +142,17 @@ func rewrite(args []string) error {
 	if err := patchFile.Close(); err != nil {
 		return fmt.Errorf("finish temporary patch: %w", err)
 	}
-	// A generated patch may include paths that the official dump represents but
-	// OfficeCLI cannot later resolve (for example, an empty or normalized run).
-	// The original manual workflow always used --best-effort; rewrite must do the
-	// same or one failed path makes OfficeCLI's atomic batch discard every update.
-	batchArgs := []string{"batch", *output, "--input", patchPath, "--best-effort"}
-	batchLog, batchErr := runBatch(batchArgs)
-	successful := successfulPaths(batchLog)
-	if len(successful) == 0 && batchErr != nil {
-		return batchErr
-	}
-	if err := mergeUnmodifiedParts(source, *output, mutablePartsFromPaths(successful)); err != nil {
-		return err
-	}
-	if batchErr != nil {
-		fmt.Fprintf(os.Stderr, "officecli-patch: rewrote %d of %d text change(s); %d could not be applied\n", len(successful), len(changes), len(changes)-len(successful))
-		return nil
-	}
-	fmt.Fprintf(os.Stderr, "officecli-patch: rewrote %d text change(s) to %s\n", len(changes), *output)
-	return nil
-}
-
-// mutableParts returns the OpenXML package parts which may contain an edited run.
-// Every other ZIP part is restored byte-for-byte from the original after OfficeCLI
-// saves its text update, preventing its serializer from changing unrelated content.
-func mutablePartsFromPaths(paths []string) map[string]bool {
-	parts := make(map[string]bool)
-	for _, path := range paths {
-		root := strings.TrimPrefix(path, "/")
-		root = strings.SplitN(root, "/", 2)[0]
-		switch {
-		case root == "body":
-			parts["word/document.xml"] = true
-		case root == "styles":
-			parts["word/styles.xml"] = true
-		case root == "footnotes":
-			parts["word/footnotes.xml"] = true
-		case root == "endnotes":
-			parts["word/endnotes.xml"] = true
-		case root == "comments":
-			parts["word/comments.xml"] = true
-		case strings.HasPrefix(root, "header["):
-			if n, ok := bracketNumber(root); ok {
-				parts[fmt.Sprintf("word/header%d.xml", n)] = true
-			}
-		case strings.HasPrefix(root, "footer["):
-			if n, ok := bracketNumber(root); ok {
-				parts[fmt.Sprintf("word/footer%d.xml", n)] = true
-			}
+	// This is the second batch from the manual workflow. OfficeCLI can return a
+	// non-zero status for individual unresolved paths even after applying the
+	// remaining changes, so preserve the written output and report that condition.
+	if err := runOfficeCLI([]string{"batch", *output, "--input", patchPath, "--best-effort"}); err != nil {
+		var exitErr *exitError
+		if !errors.As(err, &exitErr) {
+			return fmt.Errorf("apply text patch: %w", err)
 		}
+		fmt.Fprintf(os.Stderr, "officecli-patch: text patch completed with some unresolved paths; output was written to %s\n", *output)
 	}
-	return parts
-}
-
-var updatedPathLine = regexp.MustCompile(`(?m)^\[\d+\] Updated ([^:]+):`)
-
-// successfulPaths is intentionally derived from OfficeCLI's per-item result. A
-// failed set must not cause its header/footer part to be retained from a save that
-// merely normalized it; it is restored exactly from the source instead.
-func successfulPaths(batchLog []byte) []string {
-	matches := updatedPathLine.FindAllSubmatch(batchLog, -1)
-	paths := make([]string, 0, len(matches))
-	for _, match := range matches {
-		paths = append(paths, string(match[1]))
-	}
-	return paths
-}
-
-func bracketNumber(root string) (int, bool) {
-	start := strings.IndexByte(root, '[')
-	end := strings.IndexByte(root, ']')
-	if start < 0 || end <= start+1 {
-		return 0, false
-	}
-	n, err := strconv.Atoi(root[start+1 : end])
-	return n, err == nil && n > 0
-}
-
-// mergeUnmodifiedParts takes the selected XML parts from OfficeCLI's result and
-// raw-copies all remaining package entries from source. archive/zip.Writer.Copy
-// preserves each untouched entry's compressed bytes and metadata.
-func mergeUnmodifiedParts(source, edited string, mutable map[string]bool) error {
-	originalZip, err := zip.OpenReader(source)
-	if err != nil {
-		return fmt.Errorf("open original DOCX package: %w", err)
-	}
-	defer originalZip.Close()
-	editedZip, err := zip.OpenReader(edited)
-	if err != nil {
-		return fmt.Errorf("open edited DOCX package: %w", err)
-	}
-	defer editedZip.Close()
-	editedEntries := make(map[string]*zip.File, len(editedZip.File))
-	for _, entry := range editedZip.File {
-		editedEntries[entry.Name] = entry
-	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(edited), ".officecli-patch-merged-*.docx")
-	if err != nil {
-		return fmt.Errorf("create merged DOCX: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	writer := zip.NewWriter(tmp)
-	for _, originalEntry := range originalZip.File {
-		entry := originalEntry
-		if mutable[originalEntry.Name] {
-			var exists bool
-			entry, exists = editedEntries[originalEntry.Name]
-			if !exists {
-				writer.Close()
-				tmp.Close()
-				return fmt.Errorf("OfficeCLI result is missing modified part %s", originalEntry.Name)
-			}
-		}
-		if err := writer.Copy(entry); err != nil {
-			writer.Close()
-			tmp.Close()
-			return fmt.Errorf("copy DOCX part %s: %w", entry.Name, err)
-		}
-	}
-	if err := writer.Close(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("finish merged DOCX: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close merged DOCX: %w", err)
-	}
-	// Zip readers hold Windows file handles until explicitly closed. Release them
-	// before replacing the result path (the defers still cover earlier returns).
-	if err := originalZip.Close(); err != nil {
-		return fmt.Errorf("close original DOCX package: %w", err)
-	}
-	if err := editedZip.Close(); err != nil {
-		return fmt.Errorf("close edited DOCX package: %w", err)
-	}
-	if err := replaceFile(tmpName, edited); err != nil {
-		return fmt.Errorf("replace edited DOCX with preserved package: %w", err)
-	}
+	fmt.Fprintf(os.Stderr, "officecli-patch: completed AI JSON batch and %d props.text patch change(s) for %s\n", len(changes), *output)
 	return nil
 }
 
@@ -284,12 +166,6 @@ func makePatch(originalPath, aiPath string) ([]patch.BatchCommand, []patch.Chang
 		return nil, nil, fmt.Errorf("read AI JSON: %w", err)
 	}
 	return patch.Build(original, ai)
-}
-
-func runBatch(args []string) ([]byte, error) {
-	var output bytes.Buffer
-	err := runOfficeCLIWithOutput(args, &output)
-	return output.Bytes(), err
 }
 
 func runOfficeCLI(args []string) error {
@@ -413,9 +289,9 @@ Usage:
   officecli-patch diff <original.json> <ai.json> [-o <patch.json>]
   officecli-patch rewrite <source.docx> <original.json> <ai.json> [-o <edited.docx>] [--force]
 
-rewrite combines copy, diff, and OfficeCLI batch into one operation. It applies only actual
-props.text differences, always uses OfficeCLI --best-effort so invalid paths do not discard all
-updates, and restores every untouched DOCX ZIP part from the source document.
+rewrite combines the proven four-command workflow into one operation: copy the source, run the
+complete AI JSON through OfficeCLI batch, create a props.text patch, then apply that patch with
+OfficeCLI batch --best-effort.
 
 All other commands and arguments are passed through to the embedded native OfficeCLI unchanged.
 For example: officecli-patch dump file.docx -o original.json

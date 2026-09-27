@@ -16,7 +16,7 @@ officecli-patch rewrite original.docx original.json ai.json -o output.docx
 
 `officecli-patch` 基於 [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)。官方 OfficeCLI 提供完整的 Office 文件操作能力，但目前沒有「以原始 DOCX 為基礎，只套用 AI JSON 的文字變更並盡量保留既有格式與內容」的專用流程。
 
-本專案補足此功能：`rewrite` 只讀取 `props.text` 差異，將文字套回原始文件，並保留未修改的 DOCX package part，避免重建整份文件。它適合需要修改文字、但希望保留 watermark、logo、頁首／頁尾、圖片、shape、樣式、表格與 relationship 的情境。
+本專案補足此功能：`rewrite` 嚴格整合既有的官方 OfficeCLI 工作流程：先複製原文件、執行完整 AI JSON batch、產生 `props.text` patch，最後以 `--best-effort` 套用 patch。即使前一個 batch 回報個別路徑錯誤，仍會繼續執行最後的 patch，與原本手動流程一致。它適合需要修改文字、但希望保留 watermark、logo、頁首／頁尾、圖片、shape、樣式、表格與 relationship 的情境。
 
 除了新增的 `diff`、`rewrite`，所有原生 OfficeCLI 指令與參數都會直接 passthrough。
 
@@ -47,7 +47,7 @@ officecli-patch help docx
 | 指令 | 說明 |
 | --- | --- |
 | `diff <original.json> <ai.json> [-o <patch.json>]` | 僅產生既有文字 run 的 `props.text` 差異。 |
-| `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | 複製原文件、產生文字 patch、套用變更並還原未修改部分。 |
+| `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | 複製原文件、執行完整 AI JSON batch、產生文字 patch，再以 `--best-effort` 套用 patch。 |
 
 `rewrite` 預設輸出 `<原檔名>.rewritten.docx`，並固定以 `--best-effort` 套用 patch：無法套用的個別 run 不會取消其他成功的文字更新。`--force` 可覆寫既有輸出檔。
 
@@ -65,7 +65,7 @@ pip install officecli-patch
 
 `officecli-patch` is a compatible extension for [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI). It keeps every native OfficeCLI command and argument, while adding `diff` and `rewrite`.
 
-OfficeCLI does not currently provide a dedicated workflow that starts from the original DOCX, applies only AI JSON text changes, and preserves the rest of the document. `rewrite` fills that gap: it compares only `props.text`, applies the changed text to a copy of the original document, and retains untouched DOCX package parts instead of rebuilding the entire file.
+OfficeCLI does not currently provide a dedicated command for the established original-format rewrite workflow. `rewrite` combines that exact sequence: copy the source DOCX, run the complete AI JSON through batch, generate a `props.text` patch, then batch-apply that patch with `--best-effort`.
 
 This is useful for documents that must retain their watermark, logo, headers/footers, images, shapes, styles, tables, and relationships.
 
@@ -91,7 +91,7 @@ officecli-patch raw output.docx /document
 | Command | Description |
 | --- | --- |
 | `diff <original.json> <ai.json> [-o <patch.json>]` | Produces `props.text` changes for existing text runs only. |
-| `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | Copies the source, creates a text patch, applies it, and restores untouched parts. |
+| `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | Copies the source, runs the complete AI JSON batch, then creates and applies a `--best-effort` text patch. |
 
 The PyPI package is a launcher. On first run it detects the OS, CPU architecture, and Linux libc variant; it downloads the matching GitHub Release binary, verifies `checksums.txt`, then caches and runs it.
 

@@ -12,7 +12,7 @@
 
 常見需求其實是：**只修改 AI 真正改過的文字，同時保留原始 DOCX 的 watermark、logo、頁首／頁尾、圖片、shape、表格、樣式與 relationship。**
 
-官方 OfficeCLI 目前尚未提供這個「以原始文件為基礎、只套用文字差異」的整合流程。`officecli-patch` 因此將手動複製文件、比較 JSON、產生 patch、再執行 batch 的流程，收斂為 `rewrite` 指令。
+官方 OfficeCLI 目前尚未提供這個「以原始文件為基礎、執行完整 AI JSON batch 後再以文字 patch 修正格式」的整合流程。`officecli-patch` 因此將手動複製文件、執行 AI JSON batch、比較 JSON、產生 patch、再執行 batch 的流程，收斂為 `rewrite` 指令。
 
 ### 安裝與使用
 
@@ -50,7 +50,7 @@ OfficeCLI is excellent for dumping, inspecting, and batch-processing Office docu
 
 The practical requirement is usually: **change only the text the AI actually changed, while retaining the original DOCX watermark, logo, headers/footers, images, shapes, tables, styles, and relationships.**
 
-Official OfficeCLI does not yet provide an integrated workflow that starts from the original document and applies text-only differences. `officecli-patch` provides that workflow through `rewrite`, replacing the manual copy → JSON comparison → patch generation → batch application sequence.
+Official OfficeCLI does not yet provide an integrated command for the workflow that starts from the original document, runs the complete AI JSON batch, and then corrects it with a text patch. `officecli-patch` provides that workflow through `rewrite`, replacing the manual copy → AI JSON batch → JSON comparison → patch generation → best-effort batch sequence.
 
 ### Install and use
 
