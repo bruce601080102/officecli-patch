@@ -9,7 +9,7 @@ import subprocess
 import sys
 from urllib.request import Request, urlopen
 
-from ._release import REPOSITORY
+from ._release import RELEASE_VERSION, REPOSITORY
 
 
 def asset_name() -> str:
@@ -33,9 +33,16 @@ def asset_name() -> str:
     raise RuntimeError(f"不支援的作業系統：{platform.system()}")
 
 
+def release_tag() -> str:
+    if RELEASE_VERSION == "CHANGE_ME":
+        raise RuntimeError("此 PyPI launcher 尚未設定 GitHub Release 版本。請使用正式發布的 wheel。")
+    return f"v{RELEASE_VERSION.removeprefix('v')}"
+
+
 def cache_dir() -> Path:
     base = Path(os.getenv("LOCALAPPDATA", "")) if os.name == "nt" else Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / "officecli-patch" / "bin"
+    # Never reuse a previous release binary after `pip install --upgrade`.
+    return base / "officecli-patch" / "bin" / release_tag()
 
 
 def download(url: str, target: Path) -> None:
@@ -45,9 +52,9 @@ def download(url: str, target: Path) -> None:
             output.write(block)
 
 
-def expected_checksum(name: str) -> str:
+def expected_checksum(name: str, tag: str) -> str:
     request = Request(
-        f"https://github.com/{REPOSITORY}/releases/latest/download/checksums.txt",
+        f"https://github.com/{REPOSITORY}/releases/download/{tag}/checksums.txt",
         headers={"User-Agent": "officecli-patch-pypi"},
     )
     with urlopen(request, timeout=60) as response:
@@ -62,15 +69,16 @@ def binary() -> Path:
     if REPOSITORY.startswith("CHANGE_ME/"):
         raise RuntimeError("此 PyPI launcher 尚未設定 GitHub repository。請使用正式發布的 wheel。")
     name = asset_name()
+    tag = release_tag()
     target = cache_dir() / name
     if target.is_file():
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".download")
     try:
-        download(f"https://github.com/{REPOSITORY}/releases/latest/download/{name}", temporary)
+        download(f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}", temporary)
         actual = hashlib.sha256(temporary.read_bytes()).hexdigest()
-        if actual != expected_checksum(name):
+        if actual != expected_checksum(name, tag):
             raise RuntimeError(f"下載檔案的 SHA-256 驗證失敗：{name}")
         temporary.replace(target)
         if os.name != "nt":

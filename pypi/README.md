@@ -38,7 +38,7 @@ officecli-patch batch document.docx --input commands.json
 officecli-patch raw --help
 ```
 
-首次執行時，PyPI 啟動器會自動判斷作業系統、CPU 架構與 Linux libc 類型，從 GitHub Release 下載對應執行檔、驗證 SHA-256 並快取到本機。
+首次執行時，PyPI 啟動器會自動判斷作業系統、CPU 架構與 Linux libc 類型，從與該 PyPI 版本相同的 GitHub Release 下載對應執行檔、驗證 SHA-256 並快取到本機。每個版本使用獨立快取，不會重用舊版 binary。
 
 ## English
 
@@ -77,6 +77,6 @@ officecli-patch batch document.docx --input commands.json
 officecli-patch raw --help
 ```
 
-On first use, the PyPI launcher detects the operating system, CPU architecture, and Linux libc variant. It downloads the matching GitHub Release binary, verifies its SHA-256 checksum, caches it locally, and runs it.
+On first use, the PyPI launcher detects the operating system, CPU architecture, and Linux libc variant. It downloads the matching binary from the GitHub Release for that exact PyPI version, verifies its SHA-256 checksum, then caches and runs it. Each release has its own cache, so an older binary is never reused after an upgrade.
 
 Source code, full documentation, and releases: [bruce601080102/officecli-patch](https://github.com/bruce601080102/officecli-patch).

@@ -53,7 +53,7 @@ officecli-patch help docx
 
 ### PyPI 與 GitHub Release
 
-PyPI 套件是 launcher：首次執行時會自動判斷 Windows/macOS/Linux、x64/ARM64、Linux glibc/musl，從 GitHub Release 下載正確 binary、驗證 `checksums.txt` 後執行。
+PyPI 套件是 launcher：首次執行時會自動判斷 Windows/macOS/Linux、x64/ARM64、Linux glibc/musl，從與 PyPI 套件相同版本的 GitHub Release 下載正確 binary、驗證 `checksums.txt` 後執行。每個 Release 使用獨立快取，不會重用舊 binary。
 
 維護者可執行 `./build.sh`，或在 Windows 執行 `./build.ps1`。兩者都會下載、驗證官方 OfficeCLI binaries，並將各平台輸出放入 `release/`；官方 binary 與本機產物不會提交至 Git。
 
@@ -93,6 +93,6 @@ officecli-patch raw output.docx /document
 | `diff <original.json> <ai.json> [-o <patch.json>]` | Produces `props.text` changes for existing text runs only. |
 | `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | Copies the source, runs the complete AI JSON batch, then creates and applies a `--best-effort` text patch. |
 
-The PyPI package is a launcher. On first run it detects the OS, CPU architecture, and Linux libc variant; it downloads the matching GitHub Release binary, verifies `checksums.txt`, then caches and runs it.
+The PyPI package is a launcher. On first run it detects the OS, CPU architecture, and Linux libc variant; it downloads the matching binary from the GitHub Release for that PyPI version, verifies `checksums.txt`, then caches and runs it. Each release has a separate cache.
 
 For maintainers, `./build.sh` or `./build.ps1` downloads and verifies official OfficeCLI binaries, then writes all platform builds to `release/`.
