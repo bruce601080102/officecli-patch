@@ -66,6 +66,12 @@ def expected_checksum(name: str, tag: str) -> str:
 
 
 def binary() -> Path:
+    override = os.getenv("OFFICECLI_PATCH_BINARY")
+    if override:
+        path = Path(override).expanduser()
+        if not path.is_file():
+            raise RuntimeError(f"OFFICECLI_PATCH_BINARY 找不到檔案：{path}")
+        return path
     if REPOSITORY.startswith("CHANGE_ME/"):
         raise RuntimeError("此 PyPI launcher 尚未設定 GitHub repository。請使用正式發布的 wheel。")
     name = asset_name()

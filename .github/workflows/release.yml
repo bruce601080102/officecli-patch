@@ -51,8 +51,10 @@ jobs:
       - name: Build PyPI launcher
         if: inputs.publish_pypi
         run: |
+          python -m unittest discover -s pypi/tests
           python -m pip install --upgrade build
           python scripts/build_pypi.py --repository '${{ github.repository }}' --version '${{ inputs.version }}'
+          python scripts/smoke_test_pypi.py --wheel-dir release/pypi
       - name: Publish PyPI launcher
         if: inputs.publish_pypi
         uses: pypa/gh-action-pypi-publish@release/v1

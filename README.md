@@ -5,34 +5,39 @@
 ## 繁體中文
 
 ```bash
-pip install officecli-patch
+python -m pip install --upgrade officecli-patch
+officecli-patch --version
 ```
 
-安裝後可直接使用：
+安裝後，pip 會建立 `officecli-patch` 終端命令，可直接使用：
 
 ```bash
-officecli-patch rewrite original.docx original.json ai.json -o output.docx
+officecli-patch rewrite original.xlsx original.json ai.json -o output.xlsx
 ```
 
-`officecli-patch` 基於 [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)。官方 OfficeCLI 提供完整的 Office 文件操作能力，但目前沒有「以原始 DOCX 為基礎，只套用 AI JSON 的文字變更並盡量保留既有格式與內容」的專用流程。
+第一次執行會下載並驗證與套件版本相同、符合目前作業系統與 CPU 的原生執行檔。如果終端顯示找不到命令，代表 Python 的 Scripts/bin 目錄不在 `PATH`；可重新開啟終端，或先用 `python -m officecli_patch --version` 執行相同入口。在 virtualenv／venv 中安裝時，啟用環境後即可直接使用 `officecli-patch`。
 
-本專案補足此功能：`rewrite` 嚴格整合既有的官方 OfficeCLI 工作流程：先複製原文件、執行完整 AI JSON batch、產生 `props.text` patch，最後以 `--best-effort` 套用 patch。即使前一個 batch 回報個別路徑錯誤，仍會繼續執行最後的 patch，與原本手動流程一致。它適合需要修改文字、但希望保留 watermark、logo、頁首／頁尾、圖片、shape、樣式、表格與 relationship 的情境。
+`officecli-patch` 基於 [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)。官方 OfficeCLI 提供完整的 Office 文件操作能力，但目前沒有「以原始 Office 文件為基礎，只套用 AI JSON 的內容變更並盡量保留既有格式與內容」的專用流程。
+
+本專案補足此功能：`rewrite` 整合既有的官方 OfficeCLI 工作流程：先複製原文件、執行完整 AI JSON batch、產生窄範圍內容 patch，最後以 `--best-effort` 套用 patch。即使前一個 batch 因個別路徑錯誤而 atomic rollback，仍會繼續執行最後的 patch。內容 patch 支援 DOCX 文字 run、PPTX 文字，以及 XLSX 工作表 import 與 rich text；不會把 AI 意外改動的樣式帶進 fallback patch。
+
+XLSX 的 `import.text` 差異會被拆成個別儲存格的 `set`／`clear`／`formula` 指令，只更新真正變動的儲存格，避免整張重新 import 導致未修改的 rich text 或格式流失。
 
 除了新增的 `diff`、`rewrite`，所有原生 OfficeCLI 指令與參數都會直接 passthrough。
 
 ### 使用方式
 
-先以原生 `dump` 取得 JSON，再讓 AI 只修改其中的 `props.text`：
+先以原生 `dump` 取得 JSON，再讓 AI 修改內容欄位。DOCX/PPTX 通常是 `props.text`，XLSX 的一般儲存格內容位於 `import.text`，rich text 位於 `props.runs`：
 
 ```bash
-officecli-patch dump original.docx -o original.json
+officecli-patch dump original.xlsx -o original.json
 # 將 original.json 交給 AI 編輯，另存為 ai.json
 
-# 可選：檢視文字差異 patch
+# 可選：檢視內容差異 patch
 officecli-patch diff original.json ai.json -o patch.json
 
 # 建立保留原格式的輸出文件
-officecli-patch rewrite original.docx original.json ai.json -o output.docx
+officecli-patch rewrite original.xlsx original.json ai.json -o output.xlsx
 ```
 
 原生指令照常可用：
@@ -46,10 +51,10 @@ officecli-patch help docx
 
 | 指令 | 說明 |
 | --- | --- |
-| `diff <original.json> <ai.json> [-o <patch.json>]` | 僅產生既有文字 run 的 `props.text` 差異。 |
-| `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | 複製原文件、執行完整 AI JSON batch、產生文字 patch，再以 `--best-effort` 套用 patch。 |
+| `diff <original.json> <ai.json> [-o <patch.json>]` | 產生 DOCX、PPTX、XLSX 的內容差異 patch，不包含樣式差異。 |
+| `rewrite <source.docx\|xlsx\|pptx> <original.json> <ai.json> [-o <output>]` | 複製原文件、執行完整 AI JSON batch、產生內容 patch，再以 `--best-effort` 套用 patch。 |
 
-`rewrite` 預設輸出 `<原檔名>.rewritten.docx`，並固定以 `--best-effort` 套用 patch：無法套用的個別 run 不會取消其他成功的文字更新。`--force` 可覆寫既有輸出檔。
+`rewrite` 預設輸出 `<原檔名>.rewritten.<原副檔名>`，並固定以 `--best-effort` 套用 patch：無法套用的個別項目不會取消其他成功的內容更新。`--force` 可覆寫既有輸出檔。
 
 ### PyPI 與 GitHub Release
 
@@ -60,12 +65,17 @@ PyPI 套件是 launcher：首次執行時會自動判斷 Windows/macOS/Linux、x
 ## English
 
 ```bash
-pip install officecli-patch
+python -m pip install --upgrade officecli-patch
+officecli-patch --version
 ```
+
+pip installs an `officecli-patch` terminal command. The first run downloads and verifies the native executable matching the package version, operating system, and CPU. If the command is not found, reopen the terminal or add Python's Scripts/bin directory to `PATH`; `python -m officecli_patch --version` is a PATH-independent fallback. An activated virtual environment exposes `officecli-patch` directly.
 
 `officecli-patch` is a compatible extension for [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI). It keeps every native OfficeCLI command and argument, while adding `diff` and `rewrite`.
 
-OfficeCLI does not currently provide a dedicated command for the established original-format rewrite workflow. `rewrite` combines that exact sequence: copy the source DOCX, run the complete AI JSON through batch, generate a `props.text` patch, then batch-apply that patch with `--best-effort`.
+OfficeCLI does not currently provide a dedicated command for this original-format rewrite workflow. `rewrite` copies the source DOCX, XLSX, or PPTX, runs the complete AI JSON through batch, generates a narrow content patch, then batch-applies that patch with `--best-effort`. The fallback patch supports DOCX runs, PPTX text, and XLSX worksheet imports/rich text.
+
+XLSX `import.text` differences are expanded into per-cell `set`, `clear`, or `formula` commands. Only changed cells are touched, so unchanged rich text and formatting are retained.
 
 This is useful for documents that must retain their watermark, logo, headers/footers, images, shapes, styles, tables, and relationships.
 
@@ -73,11 +83,11 @@ This is useful for documents that must retain their watermark, logo, headers/foo
 
 ```bash
 # Dump with the native OfficeCLI-compatible command.
-officecli-patch dump original.docx -o original.json
+officecli-patch dump original.pptx -o original.json
 
-# Let an AI edit only props.text and save the result as ai.json.
+# Let an AI edit content fields and save the result as ai.json.
 officecli-patch diff original.json ai.json -o patch.json
-officecli-patch rewrite original.docx original.json ai.json -o output.docx
+officecli-patch rewrite original.pptx original.json ai.json -o output.pptx
 ```
 
 All other commands are passed through to the embedded official OfficeCLI:
@@ -90,8 +100,8 @@ officecli-patch raw output.docx /document
 
 | Command | Description |
 | --- | --- |
-| `diff <original.json> <ai.json> [-o <patch.json>]` | Produces `props.text` changes for existing text runs only. |
-| `rewrite <source.docx> <original.json> <ai.json> [-o <output.docx>]` | Copies the source, runs the complete AI JSON batch, then creates and applies a `--best-effort` text patch. |
+| `diff <original.json> <ai.json> [-o <patch.json>]` | Produces content-only DOCX, XLSX, and PPTX changes while excluding style changes. |
+| `rewrite <source.docx\|xlsx\|pptx> <original.json> <ai.json> [-o <output>]` | Copies the source, runs the complete AI JSON batch, then creates and applies a `--best-effort` content patch. |
 
 The PyPI package is a launcher. On first run it detects the OS, CPU architecture, and Linux libc variant; it downloads the matching binary from the GitHub Release for that PyPI version, verifies `checksums.txt`, then caches and runs it. Each release has a separate cache.
 

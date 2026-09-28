@@ -1,4 +1,4 @@
-// officecli-patch adds safe JSON text patching to iOfficeAI OfficeCLI.
+// officecli-patch adds safe JSON content patching to iOfficeAI OfficeCLI.
 package main
 
 import (
@@ -15,7 +15,7 @@ import (
 	"officecli-patch/internal/patch"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -77,27 +77,27 @@ func diff(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "officecli-patch: %d text change(s)\n", len(changes))
+	fmt.Fprintf(os.Stderr, "officecli-patch: %d content change(s)\n", len(changes))
 	return nil
 }
 
 // rewrite is intentionally equivalent to the proven manual workflow:
-// copy source -> batch the full AI JSON -> make a text patch -> batch the patch
-// with --best-effort. It does not inspect or rewrite DOCX ZIP parts itself.
+// copy source -> batch the full AI JSON -> make a content patch -> batch the
+// patch with --best-effort. It does not inspect or rewrite Office ZIP parts itself.
 func rewrite(args []string) error {
 	fs := newFlagSet("rewrite")
-	output := fs.String("output", "", "write rewritten DOCX here")
-	fs.StringVar(output, "o", "", "write rewritten DOCX here")
+	output := fs.String("output", "", "write rewritten Office document here")
+	fs.StringVar(output, "o", "", "write rewritten Office document here")
 	force := fs.Bool("force", false, "allow overwriting --output")
 	if err := parseInterspersed(fs, args, map[string]bool{"--output": true, "-o": true}); err != nil {
 		return err
 	}
 	if fs.NArg() != 3 {
-		return usageError("rewrite requires <source.docx> <original.json> <ai.json>")
+		return usageError("rewrite requires <source.docx|xlsx|pptx> <original.json> <ai.json>")
 	}
 	source := fs.Arg(0)
 	if *output == "" {
-		*output = strings.TrimSuffix(source, filepath.Ext(source)) + ".rewritten.docx"
+		*output = defaultRewritePath(source)
 	}
 	if samePath(source, *output) {
 		return usageError("--output is the input file; choose another output name")
@@ -106,23 +106,23 @@ func rewrite(args []string) error {
 		return err
 	}
 	// This is the first OfficeCLI batch from the manual workflow. It deliberately
-	// receives the complete AI JSON rather than the generated narrow text patch.
+	// receives the complete AI JSON rather than the generated narrow content patch.
 	if err := runOfficeCLI([]string{"batch", *output, "--input", fs.Arg(2)}); err != nil {
 		var exitErr *exitError
 		if !errors.As(err, &exitErr) {
 			return fmt.Errorf("apply AI JSON to copied document: %w", err)
 		}
 		// Match the shell workflow: an OfficeCLI batch may report unresolved items
-		// (and even atomic rollback) but the following best-effort text patch must
+		// (and even atomic rollback) but the following best-effort content patch must
 		// still run against the copied source document.
-		fmt.Fprintln(os.Stderr, "officecli-patch: AI JSON batch reported unresolved items; continuing with the text patch")
+		fmt.Fprintln(os.Stderr, "officecli-patch: AI JSON batch reported unresolved items; continuing with the content patch")
 	}
 	commands, changes, err := makePatch(fs.Arg(1), fs.Arg(2))
 	if err != nil {
 		return err
 	}
 	if len(commands) == 0 {
-		fmt.Fprintf(os.Stderr, "officecli-patch: AI JSON applied; no props.text patch was needed: %s\n", *output)
+		fmt.Fprintf(os.Stderr, "officecli-patch: no DOCX/XLSX/PPTX content patch was needed: %s\n", *output)
 		return nil
 	}
 	data, err := patch.Marshal(commands)
@@ -148,11 +148,11 @@ func rewrite(args []string) error {
 	if err := runOfficeCLI([]string{"batch", *output, "--input", patchPath, "--best-effort"}); err != nil {
 		var exitErr *exitError
 		if !errors.As(err, &exitErr) {
-			return fmt.Errorf("apply text patch: %w", err)
+			return fmt.Errorf("apply content patch: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "officecli-patch: text patch completed with some unresolved paths; output was written to %s\n", *output)
+		fmt.Fprintf(os.Stderr, "officecli-patch: content patch completed with some unresolved paths; output was written to %s\n", *output)
 	}
-	fmt.Fprintf(os.Stderr, "officecli-patch: completed AI JSON batch and %d props.text patch change(s) for %s\n", len(changes), *output)
+	fmt.Fprintf(os.Stderr, "officecli-patch: completed AI JSON batch and %d content patch change(s) for %s\n", len(changes), *output)
 	return nil
 }
 
@@ -242,6 +242,11 @@ func samePath(a, b string) bool {
 	return errA == nil && errB == nil && strings.EqualFold(filepath.Clean(aa), filepath.Clean(bb))
 }
 
+func defaultRewritePath(source string) string {
+	ext := filepath.Ext(source)
+	return strings.TrimSuffix(source, ext) + ".rewritten" + ext
+}
+
 func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -283,17 +288,18 @@ func usageError(message string) error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `officecli-patch: safe DOCX text rewrite tool
+	fmt.Fprint(w, `officecli-patch: safe DOCX/XLSX/PPTX content rewrite tool
 
 Usage:
   officecli-patch diff <original.json> <ai.json> [-o <patch.json>]
-  officecli-patch rewrite <source.docx> <original.json> <ai.json> [-o <edited.docx>] [--force]
+  officecli-patch rewrite <source.docx|xlsx|pptx> <original.json> <ai.json> [-o <edited-file>] [--force]
 
 rewrite combines the proven four-command workflow into one operation: copy the source, run the
-complete AI JSON through OfficeCLI batch, create a props.text patch, then apply that patch with
-OfficeCLI batch --best-effort.
+complete AI JSON through OfficeCLI batch, create a content-only patch, then apply that patch with
+OfficeCLI batch --best-effort. Content patches support Word runs, PowerPoint text, and Excel
+worksheet imports/rich text while leaving formatting changes out of the narrow fallback patch.
 
 All other commands and arguments are passed through to the embedded native OfficeCLI unchanged.
-For example: officecli-patch dump file.docx -o original.json
+For example: officecli-patch dump file.xlsx -o original.json
 `)
 }

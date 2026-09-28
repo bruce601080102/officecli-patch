@@ -6,7 +6,7 @@ root = Path(__file__).parent
 
 setup(
     name="officecli-patch",
-    version=environ.get("OFFICECLI_PATCH_VERSION", "0.2.0"),
+    version=environ.get("OFFICECLI_PATCH_VERSION", "0.3.0"),
     description="Cross-platform launcher for officecli-patch GitHub Release binaries",
     long_description=(root / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
