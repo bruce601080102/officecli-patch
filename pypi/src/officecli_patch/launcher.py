@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from ._release import RELEASE_VERSION, REPOSITORY
@@ -59,8 +60,16 @@ def expected_checksum(name: str, tag: str) -> str:
     )
     with urlopen(request, timeout=60) as response:
         for line in response.read().decode("utf-8").splitlines():
-            digest, filename = line.split(maxsplit=1)
+            fields = line.split(maxsplit=1)
+            # A proxy or a partially uploaded release asset can return content
+            # that is not a sha256sum line.  Ignore it here so callers receive
+            # the useful "not found" error below instead of a ValueError.
+            if len(fields) != 2:
+                continue
+            digest, filename = fields
             if filename.strip().lstrip("*") == name:
+                if len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
+                    raise RuntimeError(f"Release checksums.txt 的 SHA-256 格式無效：{name}")
                 return digest.lower()
     raise RuntimeError(f"Release checksums.txt 找不到 {name}")
 
@@ -97,7 +106,7 @@ def binary() -> Path:
 def main() -> None:
     try:
         result = subprocess.run([str(binary()), *sys.argv[1:]])
-    except (OSError, RuntimeError) as error:
+    except (OSError, RuntimeError, UnicodeError, URLError) as error:
         print(f"officecli-patch: {error}", file=sys.stderr)
         raise SystemExit(1)
     raise SystemExit(result.returncode)

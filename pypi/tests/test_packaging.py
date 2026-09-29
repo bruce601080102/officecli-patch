@@ -8,6 +8,7 @@ import tempfile
 import types
 import unittest
 from unittest import mock
+from urllib.error import URLError
 
 
 PYPI_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,13 @@ from officecli_patch import launcher  # noqa: E402
 
 
 class PackagingTests(unittest.TestCase):
+    @staticmethod
+    def checksum_response(contents: str) -> mock.MagicMock:
+        response = mock.MagicMock()
+        response.read.return_value = contents.encode("utf-8")
+        response.__enter__.return_value = response
+        return response
+
     def test_setup_installs_terminal_command(self) -> None:
         captured = {}
         setuptools = types.ModuleType("setuptools")
@@ -41,6 +49,24 @@ class PackagingTests(unittest.TestCase):
         ):
             self.assertEqual(launcher.binary(), Path(executable.name))
 
+    def test_expected_checksum_ignores_malformed_lines(self) -> None:
+        checksum = "a" * 64
+        response = self.checksum_response(f"temporary upstream response\n{checksum}  officecli-patch-win-x64.exe\n")
+        with mock.patch.object(launcher, "urlopen", return_value=response):
+            self.assertEqual(launcher.expected_checksum("officecli-patch-win-x64.exe", "v9.9.9"), checksum)
+
+    def test_expected_checksum_reports_missing_asset_after_malformed_content(self) -> None:
+        response = self.checksum_response("Bad Gateway\n")
+        with mock.patch.object(launcher, "urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "checksums.txt 找不到 officecli-patch-win-x64.exe"):
+                launcher.expected_checksum("officecli-patch-win-x64.exe", "v9.9.9")
+
+    def test_expected_checksum_rejects_invalid_digest(self) -> None:
+        response = self.checksum_response("not-a-hash  officecli-patch-win-x64.exe\n")
+        with mock.patch.object(launcher, "urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "SHA-256 格式無效"):
+                launcher.expected_checksum("officecli-patch-win-x64.exe", "v9.9.9")
+
     def test_main_forwards_arguments_and_exit_code(self) -> None:
         executable = Path(sys.executable)
         completed = types.SimpleNamespace(returncode=7)
@@ -52,6 +78,21 @@ class PackagingTests(unittest.TestCase):
 
         self.assertEqual(exit_error.exception.code, 7)
         run.assert_called_once_with([str(executable), "--version"])
+
+    def test_main_reports_download_errors_without_a_traceback(self) -> None:
+        with mock.patch.object(launcher, "binary", side_effect=URLError("network unavailable")), mock.patch.object(
+            sys, "stderr"
+        ) as stderr:
+            with self.assertRaises(SystemExit) as exit_error:
+                launcher.main()
+
+        self.assertEqual(exit_error.exception.code, 1)
+        stderr.write.assert_has_calls(
+            [
+                mock.call("officecli-patch: <urlopen error network unavailable>"),
+                mock.call("\n"),
+            ]
+        )
 
 
 if __name__ == "__main__":
