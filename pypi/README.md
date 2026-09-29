@@ -27,7 +27,7 @@ officecli-patch dump original.xlsx -o original.json
 officecli-patch rewrite original.xlsx original.json ai.json -o rewritten.xlsx
 ```
 
-pip 會安裝 `officecli-patch` 終端命令。第一次執行時會下載並驗證符合目前平台的原生執行檔。如果終端顯示找不到命令，請重新開啟終端或將 Python 的 Scripts/bin 目錄加入 `PATH`；也可用 `python -m officecli_patch --version` 作為不依賴 `PATH` 的備援入口。
+pip 會依目前作業系統與 CPU 選擇包含原生執行檔的 wheel。執行時不會下載 GitHub Release；第一次執行僅將 wheel 內的執行檔解壓至本機快取。如果終端顯示找不到命令，請重新開啟終端或將 Python 的 Scripts/bin 目錄加入 `PATH`；也可用 `python -m officecli_patch --version` 作為不依賴 `PATH` 的備援入口。
 
 若只需要查看內容差異：
 
@@ -43,7 +43,7 @@ officecli-patch batch document.docx --input commands.json
 officecli-patch raw --help
 ```
 
-首次執行時，PyPI 啟動器會自動判斷作業系統、CPU 架構與 Linux libc 類型，從與該 PyPI 版本相同的 GitHub Release 下載對應執行檔、驗證 SHA-256 並快取到本機。每個版本使用獨立快取，不會重用舊版 binary。
+PyPI 為各作業系統、CPU 架構與 Linux libc 類型發佈獨立 wheel。啟動器從安裝的 wheel 取得對應執行檔並快取到本機；每個版本使用獨立快取，不會重用舊版 binary，也不需要存取 GitHub。
 
 ## English
 
@@ -71,7 +71,7 @@ officecli-patch dump original.pptx -o original.json
 officecli-patch rewrite original.pptx original.json ai.json -o rewritten.pptx
 ```
 
-pip installs an `officecli-patch` terminal command. On first use it downloads and verifies the native executable for the current platform. If the command is not found, reopen the terminal or add Python's Scripts/bin directory to `PATH`; `python -m officecli_patch --version` is a PATH-independent fallback.
+pip installs an `officecli-patch` terminal command from a wheel containing the native executable for the current platform. It never downloads from GitHub at runtime; first use only extracts that executable into a local cache. If the command is not found, reopen the terminal or add Python's Scripts/bin directory to `PATH`; `python -m officecli_patch --version` is a PATH-independent fallback.
 
 To inspect or save the content patch only:
 
@@ -87,6 +87,6 @@ officecli-patch batch document.docx --input commands.json
 officecli-patch raw --help
 ```
 
-On first use, the PyPI launcher detects the operating system, CPU architecture, and Linux libc variant. It downloads the matching binary from the GitHub Release for that exact PyPI version, verifies its SHA-256 checksum, then caches and runs it. Each release has its own cache, so an older binary is never reused after an upgrade.
+PyPI publishes a separate wheel for each operating system, CPU architecture, and Linux libc variant. pip installs the matching wheel, which already contains its native binary; first use only extracts it to a local versioned cache and never contacts GitHub.
 
 Source code, full documentation, and releases: [bruce601080102/officecli-patch](https://github.com/bruce601080102/officecli-patch).

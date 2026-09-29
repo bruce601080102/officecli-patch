@@ -1,3 +1,2 @@
-# This file is replaced during the GitHub Actions PyPI build.
-REPOSITORY = "CHANGE_ME/officecli-patch"
+# This file is replaced in the disposable PyPI build source tree.
 RELEASE_VERSION = "CHANGE_ME"

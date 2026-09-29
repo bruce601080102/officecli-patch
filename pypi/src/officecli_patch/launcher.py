@@ -1,16 +1,17 @@
-"""Install and run the matching officecli-patch GitHub Release asset."""
+"""Run the platform-native officecli-patch binary bundled in this wheel."""
 from __future__ import annotations
 
-import hashlib
+from contextlib import contextmanager
+from importlib import resources
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import sys
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from typing import Iterator
 
-from ._release import RELEASE_VERSION, REPOSITORY
+from ._release import RELEASE_VERSION
 
 
 def asset_name() -> str:
@@ -34,44 +35,27 @@ def asset_name() -> str:
     raise RuntimeError(f"不支援的作業系統：{platform.system()}")
 
 
-def release_tag() -> str:
+def package_version() -> str:
     if RELEASE_VERSION == "CHANGE_ME":
-        raise RuntimeError("此 PyPI launcher 尚未設定 GitHub Release 版本。請使用正式發布的 wheel。")
-    return f"v{RELEASE_VERSION.removeprefix('v')}"
+        raise RuntimeError("此 PyPI wheel 尚未設定版本。請使用正式發布的 wheel。")
+    return RELEASE_VERSION.removeprefix("v")
 
 
 def cache_dir() -> Path:
     base = Path(os.getenv("LOCALAPPDATA", "")) if os.name == "nt" else Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache"))
-    # Never reuse a previous release binary after `pip install --upgrade`.
-    return base / "officecli-patch" / "bin" / release_tag()
+    # A wheel upgrade must not reuse a binary from an older wheel.
+    return base / "officecli-patch" / "bin" / package_version()
 
 
-def download(url: str, target: Path) -> None:
-    request = Request(url, headers={"User-Agent": "officecli-patch-pypi"})
-    with urlopen(request, timeout=180) as response, target.open("wb") as output:
-        while block := response.read(1024 * 1024):
-            output.write(block)
-
-
-def expected_checksum(name: str, tag: str) -> str:
-    request = Request(
-        f"https://github.com/{REPOSITORY}/releases/download/{tag}/checksums.txt",
-        headers={"User-Agent": "officecli-patch-pypi"},
-    )
-    with urlopen(request, timeout=60) as response:
-        for line in response.read().decode("utf-8").splitlines():
-            fields = line.split(maxsplit=1)
-            # A proxy or a partially uploaded release asset can return content
-            # that is not a sha256sum line.  Ignore it here so callers receive
-            # the useful "not found" error below instead of a ValueError.
-            if len(fields) != 2:
-                continue
-            digest, filename = fields
-            if filename.strip().lstrip("*") == name:
-                if len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
-                    raise RuntimeError(f"Release checksums.txt 的 SHA-256 格式無效：{name}")
-                return digest.lower()
-    raise RuntimeError(f"Release checksums.txt 找不到 {name}")
+@contextmanager
+def bundled_binary(name: str) -> Iterator[Path]:
+    asset = resources.files("officecli_patch").joinpath("binaries", name)
+    if not asset.is_file():
+        raise RuntimeError(
+            f"安裝的 officecli-patch wheel 未包含目前平台的執行檔：{name}。請重新安裝相符平台的 wheel。"
+        )
+    with resources.as_file(asset) as source:
+        yield source
 
 
 def binary() -> Path:
@@ -81,20 +65,16 @@ def binary() -> Path:
         if not path.is_file():
             raise RuntimeError(f"OFFICECLI_PATCH_BINARY 找不到檔案：{path}")
         return path
-    if REPOSITORY.startswith("CHANGE_ME/"):
-        raise RuntimeError("此 PyPI launcher 尚未設定 GitHub repository。請使用正式發布的 wheel。")
+
     name = asset_name()
-    tag = release_tag()
     target = cache_dir() / name
     if target.is_file():
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(target.suffix + ".download")
+    temporary = target.with_suffix(target.suffix + ".extract")
     try:
-        download(f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}", temporary)
-        actual = hashlib.sha256(temporary.read_bytes()).hexdigest()
-        if actual != expected_checksum(name, tag):
-            raise RuntimeError(f"下載檔案的 SHA-256 驗證失敗：{name}")
+        with bundled_binary(name) as source:
+            shutil.copyfile(source, temporary)
         temporary.replace(target)
         if os.name != "nt":
             target.chmod(0o755)
@@ -106,7 +86,7 @@ def binary() -> Path:
 def main() -> None:
     try:
         result = subprocess.run([str(binary()), *sys.argv[1:]])
-    except (OSError, RuntimeError, UnicodeError, URLError) as error:
+    except (OSError, RuntimeError) as error:
         print(f"officecli-patch: {error}", file=sys.stderr)
         raise SystemExit(1)
     raise SystemExit(result.returncode)

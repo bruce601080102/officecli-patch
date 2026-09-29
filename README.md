@@ -15,7 +15,7 @@ officecli-patch --version
 officecli-patch rewrite original.xlsx original.json ai.json -o output.xlsx
 ```
 
-第一次執行會下載並驗證與套件版本相同、符合目前作業系統與 CPU 的原生執行檔。如果終端顯示找不到命令，代表 Python 的 Scripts/bin 目錄不在 `PATH`；可重新開啟終端，或先用 `python -m officecli_patch --version` 執行相同入口。在 virtualenv／venv 中安裝時，啟用環境後即可直接使用 `officecli-patch`。
+PyPI 會依作業系統與 CPU 安裝包含對應原生執行檔的 wheel；執行時不會連線 GitHub。首次執行只會將 wheel 內的執行檔解壓到本機快取。如果終端顯示找不到命令，代表 Python 的 Scripts/bin 目錄不在 `PATH`；可重新開啟終端，或先用 `python -m officecli_patch --version` 執行相同入口。在 virtualenv／venv 中安裝時，啟用環境後即可直接使用 `officecli-patch`。
 
 `officecli-patch` 基於 [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)。官方 OfficeCLI 提供完整的 Office 文件操作能力，但目前沒有「以原始 Office 文件為基礎，只套用 AI JSON 的內容變更並盡量保留既有格式與內容」的專用流程。
 
@@ -56,9 +56,9 @@ officecli-patch help docx
 
 `rewrite` 預設輸出 `<原檔名>.rewritten.<原副檔名>`，並固定以 `--best-effort` 套用 patch：無法套用的個別項目不會取消其他成功的內容更新。`--force` 可覆寫既有輸出檔。
 
-### PyPI 與 GitHub Release
+### PyPI 套件與發行建置
 
-PyPI 套件是 launcher：首次執行時會自動判斷 Windows/macOS/Linux、x64/ARM64、Linux glibc/musl，從與 PyPI 套件相同版本的 GitHub Release 下載正確 binary、驗證 `checksums.txt` 後執行。每個 Release 使用獨立快取，不會重用舊 binary。
+PyPI 會為 Windows/macOS/Linux、x64/ARM64 與 Linux glibc/musl 發佈各自的 wheel；pip 會選擇符合目前平台的 wheel。原生 binary 已隨 wheel 安裝，首次執行只會解壓到本機快取，完全不需要存取 GitHub。每個版本使用獨立快取，不會重用舊 binary。
 
 維護者可執行 `./build.sh`，或在 Windows 執行 `./build.ps1`。兩者都會下載、驗證官方 OfficeCLI binaries，並將各平台輸出放入 `release/`；官方 binary 與本機產物不會提交至 Git。
 
@@ -69,7 +69,7 @@ python -m pip install --upgrade officecli-patch
 officecli-patch --version
 ```
 
-pip installs an `officecli-patch` terminal command. The first run downloads and verifies the native executable matching the package version, operating system, and CPU. If the command is not found, reopen the terminal or add Python's Scripts/bin directory to `PATH`; `python -m officecli_patch --version` is a PATH-independent fallback. An activated virtual environment exposes `officecli-patch` directly.
+pip selects a wheel containing the native executable for the current operating system and CPU; running the command never downloads from GitHub. The first run only extracts that executable to a local cache. If the command is not found, reopen the terminal or add Python's Scripts/bin directory to `PATH`; `python -m officecli_patch --version` is a PATH-independent fallback. An activated virtual environment exposes `officecli-patch` directly.
 
 `officecli-patch` is a compatible extension for [iOfficeAI OfficeCLI](https://github.com/iOfficeAI/OfficeCLI). It keeps every native OfficeCLI command and argument, while adding `diff` and `rewrite`.
 
@@ -103,6 +103,6 @@ officecli-patch raw output.docx /document
 | `diff <original.json> <ai.json> [-o <patch.json>]` | Produces content-only DOCX, XLSX, and PPTX changes while excluding style changes. |
 | `rewrite <source.docx\|xlsx\|pptx> <original.json> <ai.json> [-o <output>]` | Copies the source, runs the complete AI JSON batch, then creates and applies a `--best-effort` content patch. |
 
-The PyPI package is a launcher. On first run it detects the OS, CPU architecture, and Linux libc variant; it downloads the matching binary from the GitHub Release for that PyPI version, verifies `checksums.txt`, then caches and runs it. Each release has a separate cache.
+PyPI publishes separate wheels for each OS, CPU architecture, and Linux libc variant. pip installs the matching wheel, which already contains its native binary; first run only extracts it into a local versioned cache and never contacts GitHub.
 
 For maintainers, `./build.sh` or `./build.ps1` downloads and verifies official OfficeCLI binaries, then writes all platform builds to `release/`.
