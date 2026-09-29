@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+import sys
 import tempfile
 from typing import Dict, List, Optional, Tuple
 import venv
